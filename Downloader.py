@@ -1,27 +1,17 @@
-from tkinter import *
-from tkinter import ttk
-from tkinter import messagebox
-from tkinter import filedialog
 import datetime
-import time
-import tkcalendar
-from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from urllib.request import Request, urlopen 
-from bs4 import BeautifulSoup 
-from tkcalendar import Calendar, DateEntry
-import requests
 import os
-import sys
+import time
+from tkinter import *
+from tkinter import messagebox
+from tkinter import ttk
+
 import urllib3.util.request
-from urllib.request import urlopen 
+from bs4 import BeautifulSoup
+from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
+from tkcalendar import DateEntry
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-from selenium.webdriver.support.ui import Select
-from selenium.webdriver.common.action_chains import ActionChains
 usernameStr = ""
 passwordStr = ""
 
