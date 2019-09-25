@@ -70,7 +70,10 @@ class Ui_MainWindow(object):
         self.load_tree()
 
     def populate_tree_widget(self, current_widget_item, collection):
-        c = QtWidgets.QTreeWidgetItem(current_widget_item, [collection.pid, str(len(collection.get_children()))])
+        if collection.non_collection_child is True:
+            c = QtWidgets.QTreeWidgetItem(current_widget_item, [collection.pid, str(len(collection.get_children()))])
+        else:
+            c = current_widget_item
         for child in collection.get_children():
             self.populate_tree_widget(c, child)
 
