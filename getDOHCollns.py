@@ -1,4 +1,5 @@
 # MODIFY TO MAKE FASTER!
+import codecs
 from concurrent.futures.thread import ThreadPoolExecutor
 
 from robobrowser import RoboBrowser
@@ -36,7 +37,7 @@ url_dict = {}
 Threadpool. 100 workers is suitable.
 Maybe increase with a better machine and better network speed
 """
-executor = ThreadPoolExecutor(max_workers=100)
+executor = ThreadPoolExecutor(max_workers=50)
 
 # Regular expression declarations for extracting link hrefs
 let_str = r'/islandora/object/\D+?%3A\D+?.*?$'  # [a-z]+%3A[a-z]+'
@@ -114,14 +115,36 @@ def get_collns(url, parent_colln):
     browser.open(url)
 
     # Collection objects with pids ending in numbers
-    num_link = browser.find("a", href=re.compile(num_str))
+    num_link = browser.find_all("a", href=re.compile(num_str))
+    let_links = browser.find_all("a", href=re.compile(let_str))
 
-    if num_link is not None and url in url_dict:
-        url_dict[url].non_collection_child = True
+    if num_link is not None:
+        if url in url_dict:
+            url_dict[url].non_collection_child = True
+
+        if parent_colln.non_collection_child is True:
+            # Get collections ending with numbers from first page
+            # and add as children to the parent
+            pids = set()
+            for link in num_link:
+                if 'href' in link.attrs and 'title' in link.attrs:
+                    split = link['href'].split('/')
+                    pid = split[-1].replace('%3A', ':')
+                    if pid not in pids:
+                        pids.add(pid)
+                        tit = link['title']
+                        src = base_url + link['href']
+                        c = Collection(tit, src, pid, True, parent_colln)
+                        parent_colln.append_child(c)
+
+            # If there is a next page, add it to the thread pool for scraping
+            next_page = browser.find('a', title='Go to next page')
+            if next_page is not None:
+                #print('Submitting ' + next_page['href'] + ' with parent ' + parent_colln.pid)
+                futures.append(executor.submit(get_collns, base_url + next_page['href'], parent_colln))
 
     # Collection objects with pids ending in letters
-    let_links = browser.find_all("a", href=re.compile(let_str))
-    if len(let_links) > 0:
+    if let_links is not None and len(let_links) > 0:
         for lnk in let_links:
             # For each collection object url, if there is an image
             # then scrape it
@@ -222,7 +245,7 @@ def save_tree(parent):
     :param parent: the parent of the tree
     :return: None
     """
-    with open('tree.dat', 'w') as f:
+    with codecs.open('tree.dat', 'w', 'utf-8') as f:
         # Recursively save the tree
         def save(collection):
             f.write(collection.title + "\n")
@@ -257,7 +280,7 @@ def get_parent():
                         'doh:root', False, None)
 
     # Initiate the scraping process
-    get_collns('https://doh.arcabc.ca/islandora/object/doh%3Aroot', parent)
+    get_collns(parent.href, parent)
 
     # Loop runs until thread pool is done finishing its work
     while len(futures) > 0:

@@ -1,5 +1,5 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import QDate, QRunnable, QObject, pyqtSignal, pyqtSlot, QThreadPool, QMutex, QTimer
+from PyQt5.QtCore import QDate, QRunnable, QObject, pyqtSignal, pyqtSlot, QThreadPool, QMutex
 from PyQt5.QtWidgets import QMessageBox, QAbstractItemView
 from robobrowser import RoboBrowser
 import getDOHCollns
@@ -26,12 +26,14 @@ in numbers
 """
 num_str = r'/islandora/object/\D*?%3A\d*?$'  # [a-z]+%3A[0-9]+
 
+
 """
 Track how many MODS XML it is possible to download.
 This value changes based on how many collections the
 user selects.
 """
 downloadable = 0
+
 
 """
 Authentication
@@ -75,7 +77,7 @@ Scraping / Downloading
 """
 
 
-def scrape(pid, url, start_date, end_date):
+def scrape(url, start_date, end_date):
     """
     Scrapes the MODS XML urls for collection objects
     :param url: the url to scrape from
@@ -83,25 +85,43 @@ def scrape(pid, url, start_date, end_date):
     :param end_date: the ending date constraint for MODS XML files
     :return: the list of all the MODS XML urls
     """
+    pids = set()
     result = []
+    mods_links = []
+
     browser = RoboBrowser(session=global_session, parser='html.parser')
+    browser.open(url)
+    links = browser.find_all("a", href=re.compile(num_str))
+    # Scrape all the repositories that end with numbers
+    # and generate their MODS XML url page (list of MODS XML files)
+    for link in links:
+        if 'href' in link.attrs and 'title' in link.attrs:
+            split = link['href'].split('/')
+            pid = split[-1]
+            if pid not in pids:
+                mods_links.append(
+                    (pid, 'https://doh.arcabc.ca/islandora/object/' + pid + '/datastream/MODS/version')
+                )
+                pids.add(pid)
+
     # Go to each mods xml page and scrape all the
     # valid mods xml files in the date range
-    browser.open(url)
-    # Get all MODS XML file links
-    file_links = browser.find_all \
-        ("a", href=re.compile(r'/islandora/object/' + pid.replace(':', '%3A') + '/datastream/MODS/version/\d+/view'))
-    # Filter based on date
-    for file_link in file_links:
-        date = datetime.strptime(file_link.text, '%A, %d-%b-%y %H:%M:%S Z')
-        # Remove the time segment since the user
-        # does not enter a time (i.e. convert from datetime to date)
-        date = date.date()
-        # If the file is in range...
-        if start_date <= date <= end_date:
-            result.append(
-                (pid, 'https://doh.arcabc.ca' + file_link['href'], date.strftime('%m%d%y'))
-            )
+    for (pid, link) in mods_links:
+        browser.open(link)
+        # Get all MODS XML file links
+        file_links = browser.find_all \
+            ("a", href=re.compile(r'/islandora/object/' + pid + '/datastream/MODS/version/\d+/view'))
+        # Filter based on date
+        for file_link in file_links:
+            date = datetime.strptime(file_link.text, '%A, %d-%b-%y %H:%M:%S Z')
+            # Remove the time segment since the user
+            # does not enter a time (i.e. convert from datetime to date)
+            date = date.date()
+            # If the file is in range...
+            if start_date <= date <= end_date:
+                result.append(
+                    (pid, 'https://doh.arcabc.ca' + file_link['href'], date.strftime('%m%d%y'))
+                )
 
     return result
 
@@ -156,7 +176,6 @@ class DownloaderWorker(QRunnable):
     Worker class that downloads the MODS XML file and returns
     success
     """
-
     def __init__(self, fn, *args, **kwargs):
         super(DownloaderWorker, self).__init__()
         self.fn = fn
@@ -177,7 +196,6 @@ class ScraperWorker(QRunnable):
     a repository. It submits these MODS XML files to the DownloaderWorker
     class to download the mods XML file.
     """
-
     def __init__(self, fn, *args, **kwargs):
         super(ScraperWorker, self).__init__()
         self.fn = fn
@@ -188,15 +206,13 @@ class ScraperWorker(QRunnable):
     @pyqtSlot()
     def run(self):
         pid, path, start_date, end_date = self.args
-        result = self.fn(pid,
-                         'https://doh.arcabc.ca/islandora/object/' + pid.replace(":", "%3A") +
-                         '/datastream/MODS/version',
-                         start_date,
-                         end_date)
+        result = self.fn(
+                    'https://doh.arcabc.ca/islandora/object/' + pid.replace(":", "%3A"),
+                    start_date,
+                    end_date)
         # Sends scraped results to UI so it can
         # start the downloader
         self.signals.scrape_complete.emit((path, result))
-
 
 """
 UI Setup
@@ -293,8 +309,6 @@ class Ui_MainWindow(object):
         self.txtPassword.setGeometry(QtCore.QRect(260, 90, 101, 20))
         self.txtPassword.setInputMask("")
         self.txtPassword.setObjectName("txtPassword")
-        # Set password
-        self.txtPassword.setEchoMode(QtWidgets.QLineEdit.Password)
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 371, 25))
@@ -317,23 +331,6 @@ class Ui_MainWindow(object):
         self.threadpool_lock = QMutex()
         self.downloading_lock = QMutex()
 
-        # Timer
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.tick)
-
-        self.time_elapsed_zero = 0
-
-    def tick(self):
-        if threadpool.activeThreadCount() is 0:
-            self.time_elapsed_zero = self.time_elapsed_zero + 1
-        else:
-            self.time_elapsed_zero = 0
-
-        if self.time_elapsed_zero is 30:
-            self.progressBar.setValue(100)
-            self.show_info_box('Finished downloading!')
-            self.timer.stop()
-
     def total_count_increment(self):
         self.total_count_update_lock.lock()
         global downloadable
@@ -354,15 +351,17 @@ class Ui_MainWindow(object):
         path, mods = result
         # Start downloading in multiple threads
         for (pid, url, date) in mods:
-            pid = pid.replace(':', '_')
+            pid = pid.replace('%3A', '_')
             file_path = path + os.sep + pid + os.sep + pid + '_' + date + '_MODS.xml'
             if file_path not in self.downloading:
+                print('From scraped : ' + file_path)
                 self.safe_downloading_add(file_path)
                 self.total_count_increment()
                 # Path format e.g.: arms_1234_092919_MODS.xml, 092919 = 09/29/2019
                 worker = DownloaderWorker(download,
                                           url,
-                                          path,
+                                          path +
+                                          os.sep + pid,
                                           os.sep + pid + '_' + date + '_MODS.xml')
 
                 worker.signals.download_complete.connect(self.completed_download)
@@ -373,35 +372,32 @@ class Ui_MainWindow(object):
 
     def completed_download(self, completed):
         success, path = completed
+        print('From downloading : ' + path)
         if path in self.downloading:
 
             self.safe_downloading_remove(path)
             if success:
                 self.completed_update_lock.lock()
                 self.completed = self.completed + 1
-                self.progressBar.setValue((self.completed / downloadable) * 100)
+                self.progressBar.setValue((self.completed/downloadable)*100)
                 self.completed_update_lock.unlock()
             else:
                 self.failed.append(path)
 
     def create_dirs_and_download(self, root, path):
-        global downloadable
         # Make the path if it does not exist.
         if not os.path.exists(path):
             os.mkdir(path)
 
         # Scrape this URL and download valid MODS XML files
-        if root.childCount() is 0:
-            downloadable = downloadable+1
-            worker = ScraperWorker(scrape,
-                                   root.text(0),
-                                   path,
-                                   self.dtStart.date().toPyDate(),
-                                   self.dtEnd.date().toPyDate())
+        worker = ScraperWorker(scrape,
+                               root.text(0),
+                               path,
+                               self.dtStart.date().toPyDate(),
+                               self.dtEnd.date().toPyDate())
+        worker.signals.scrape_complete.connect(self.download_scraped_links)
 
-            worker.signals.scrape_complete.connect(self.download_scraped_links)
-
-            threadpool.start(worker)
+        threadpool.start(worker)
 
         # Recursively call this for the children
         for x in range(root.childCount()):
@@ -433,9 +429,6 @@ class Ui_MainWindow(object):
             for item in self.treeWidget.selectedItems():
                 self.create_dirs_and_download(item, item.text(0).replace(":", "_"))
 
-            # Start timer
-            self.timer.start(1000)
-
     def populate_tree_widget(self, current_widget_item, collection):
         if collection.non_collection_child is True:
             c = QtWidgets.QTreeWidgetItem(
@@ -459,7 +452,7 @@ class Ui_MainWindow(object):
         if os.path.exists('tree.dat'):
             parent = getDOHCollns.get_parent_from_file()
         else:
-            Ui_MainWindow.show_info_box \
+            Ui_MainWindow.show_info_box\
                 ("tree.dat file not found. Generating repositories from Arca website. This will take a few minutes...")
             parent = getDOHCollns.get_parent()
 
@@ -520,8 +513,7 @@ class Ui_MainWindow(object):
         self.btnDownload.setText(_translate("MainWindow", "Download selected"))
         self.lbllFrom.setText(_translate("MainWindow", "From:"))
         self.lblTo.setText(_translate("MainWindow", "To:"))
-        self.lblTitle.setText(_translate("MainWindow",
-                                         "<html><head/><body><p><span style=\" color:#0000ff;\">Arca - MODS XML Downloader</span></p></body></html>"))
+        self.lblTitle.setText(_translate("MainWindow", "<html><head/><body><p><span style=\" color:#0000ff;\">Arca - MODS XML Downloader</span></p></body></html>"))
         self.lblUsername.setText(_translate("MainWindow", "Username:"))
         self.lblPassword.setText(_translate("MainWindow", "Password:"))
         # Load the tree into the UI
@@ -539,3 +531,4 @@ if __name__ == "__main__":
     ui = Ui_MainWindow(MainWindow)
     MainWindow.show()
     sys.exit(app.exec_())
+
