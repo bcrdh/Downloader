@@ -418,7 +418,7 @@ class Ui_MainWindow(object):
             self.show_error_box("You must enter a username!")
         elif len(self.txtPassword.text().strip()) is 0:
             self.show_error_box("You must enter a password!")
-        elif not self.chkBoxLatest.isChecked() and not self.dtStart.date() <= self.dtEnd.date():
+        elif not self.chkBoxLatest.isChecked() and not (self.dtStart.date() <= self.dtEnd.date()):
             self.show_error_box('The start date must be smaller than or equal to the end date!')
         elif not sign_in(self.txtUsername.text(), self.txtPassword.text()):
             self.show_error_box('Ensure your username and password are correct!')
@@ -470,11 +470,11 @@ class Ui_MainWindow(object):
             parent = getDOHCollns.get_parent_from_file()
         else:
             import time
-            self.start_time = time.time()
+            start_time = time.time()
             Ui_MainWindow.show_info_box \
-                ("tree.dat file not found. Generating repositories from Arca website. This will take a few minutes...")
+                ("tree.dat file not found. Generating repositories from Arca website. This may take a while...")
             parent = getDOHCollns.get_parent()
-            print(time.time() - self.start_time)
+            print(time.time() - start_time)
 
         # Populate the widget recursively
         self.populate_tree_widget(self.treeWidget, parent)
@@ -531,7 +531,7 @@ class Ui_MainWindow(object):
         :return: None
         """
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "Arca - MODS XML Downloader V1.0"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "Arca - MODS XML Downloader V1.1.0"))
         self.btnDownload.setText(_translate("MainWindow", "Download selected"))
         self.lbllFrom.setText(_translate("MainWindow", "From:"))
         self.lblTo.setText(_translate("MainWindow", "To:"))
