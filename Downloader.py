@@ -97,19 +97,17 @@ def scrape(pid, url, start_date, end_date):
         # Filter based on date
         for file_link in file_links:
             date = datetime.strptime(file_link.text, '%A, %d-%b-%y %H:%M:%S Z')
-            # Remove the time segment since the user
-            # does not enter a time (i.e. convert from datetime to date)
-            date = date.date()
-            # If the file is in range...
-            if start_date <= date <= end_date:
+            # if its latest file, append all results OR If the file is in range append appropriate result
+            if not start_date or start_date <= date.date() <= end_date:
                 result.append(
-                    (pid, 'https://doh.arcabc.ca' + file_link['href'], date.strftime('%m%d%y'))
+                    (pid, 'https://doh.arcabc.ca' + file_link['href'], date)
                 )
     except Exception as e:
         print('Line 109: ' + e)
         return []
-
-    return result
+    # If its a date range, return the entire array
+    # otherwise the last sorted element for latest
+    return result if start_date else [sorted(result, key=lambda tup: tup[2])[-1]]
 
 
 def download(url, path, filename):
@@ -219,6 +217,7 @@ class Ui_MainWindow(object):
         Auto-generated via Qt Designer. Using the downloader.ui file.
         :param MainWindow: the main PyQt window
         """
+
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(371, 500)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
@@ -303,6 +302,7 @@ class Ui_MainWindow(object):
         self.chkBoxLatest = QtWidgets.QCheckBox(self.centralwidget)
         self.chkBoxLatest.setGeometry(QtCore.QRect(240, 400, 101, 17))
         self.chkBoxLatest.setObjectName("chkBoxLatest")
+        self.chkBoxLatest.clicked.connect(self.toggle_date_elements)
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 371, 25))
@@ -355,6 +355,11 @@ class Ui_MainWindow(object):
         # Start downloading in multiple threads
         for (pid, url, date) in mods:
             # Path format e.g.: arms_1234_092919_MODS.xml, 092919 = 09/29/2019
+            # Remove the time segment since the user
+            # does not enter a time (i.e. convert from datetime to date)
+            date = date.date()
+            # Convert to str
+            date = date.strftime('%Y%m%d')
             worker = DownloaderWorker(download,
                                       url,
                                       path,
@@ -390,8 +395,8 @@ class Ui_MainWindow(object):
             worker = ScraperWorker(scrape,
                                    root.text(0),
                                    path,
-                                   self.dtStart.date().toPyDate(),
-                                   self.dtEnd.date().toPyDate())
+                                   self.dtStart.date().toPyDate() if not self.chkBoxLatest.isChecked() else None,
+                                   self.dtEnd.date().toPyDate() if not self.chkBoxLatest.isChecked() else None)
 
             worker.signals.scrape_complete.connect(self.download_scraped_links)
 
@@ -413,7 +418,7 @@ class Ui_MainWindow(object):
             self.show_error_box("You must enter a username!")
         elif len(self.txtPassword.text().strip()) is 0:
             self.show_error_box("You must enter a password!")
-        elif not self.dtStart.date() <= self.dtEnd.date():
+        elif not self.chkBoxLatest.isChecked() and not self.dtStart.date() <= self.dtEnd.date():
             self.show_error_box('The start date must be smaller than or equal to the end date!')
         elif not sign_in(self.txtUsername.text(), self.txtPassword.text()):
             self.show_error_box('Ensure your username and password are correct!')
@@ -510,6 +515,14 @@ class Ui_MainWindow(object):
         msg_box.setWindowTitle(title)
         msg_box.setStandardButtons(QMessageBox.Ok)
         msg_box.exec_()
+
+    def toggle_date_elements(self):
+        if self.chkBoxLatest.isChecked():
+            self.dtStart.setEnabled(False)
+            self.dtEnd.setEnabled(False)
+        else:
+            self.dtStart.setEnabled(True)
+            self.dtEnd.setEnabled(True)
 
     def retranslate_ui(self, MainWindow):
         """
