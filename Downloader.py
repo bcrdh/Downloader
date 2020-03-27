@@ -11,7 +11,7 @@ from datetime import datetime
 Thread pool for all the threads
 """
 threadpool = QThreadPool()
-threadpool.setMaxThreadCount(100)
+threadpool.setMaxThreadCount(50)
 
 """
 The session that will be used by
@@ -84,24 +84,30 @@ def scrape(pid, url, start_date, end_date):
     :return: the list of all the MODS XML urls
     """
     result = []
-    browser = RoboBrowser(session=global_session, parser='html.parser')
-    # Go to each mods xml page and scrape all the
-    # valid mods xml files in the date range
-    browser.open(url)
-    # Get all MODS XML file links
-    file_links = browser.find_all \
-        ("a", href=re.compile(r'/islandora/object/' + pid.replace(':', '%3A') + '/datastream/MODS/version/\d+/view'))
-    # Filter based on date
-    for file_link in file_links:
-        date = datetime.strptime(file_link.text, '%A, %d-%b-%y %H:%M:%S Z')
-        # Remove the time segment since the user
-        # does not enter a time (i.e. convert from datetime to date)
-        date = date.date()
-        # If the file is in range...
-        if start_date <= date <= end_date:
-            result.append(
-                (pid, 'https://doh.arcabc.ca' + file_link['href'], date.strftime('%m%d%y'))
-            )
+
+    try:
+        browser = RoboBrowser(session=global_session, parser='html.parser')
+        # Go to each mods xml page and scrape all the
+        # valid mods xml files in the date range
+        browser.open(url)
+        # Get all MODS XML file links
+        file_links = browser.find_all \
+            ("a",
+             href=re.compile(r'/islandora/object/' + pid.replace(':', '%3A') + '/datastream/MODS/version/\d+/view'))
+        # Filter based on date
+        for file_link in file_links:
+            date = datetime.strptime(file_link.text, '%A, %d-%b-%y %H:%M:%S Z')
+            # Remove the time segment since the user
+            # does not enter a time (i.e. convert from datetime to date)
+            date = date.date()
+            # If the file is in range...
+            if start_date <= date <= end_date:
+                result.append(
+                    (pid, 'https://doh.arcabc.ca' + file_link['href'], date.strftime('%m%d%y'))
+                )
+    except Exception as e:
+        print('Line 109: ' + e)
+        return []
 
     return result
 
@@ -111,6 +117,7 @@ def download(url, path, filename):
     Downloads the MODS XML file and saves it
     :param url: the url to download from
     :param path: the path to save the MODS XML file
+    :param filename: the name of the file to save the MODS XML file
     :return: tuple with a boolean and path indicating if it was successful
     """
     file_path = path + filename
@@ -119,6 +126,7 @@ def download(url, path, filename):
         if not os.path.exists(path):
             os.mkdir(path)
     except Exception as e:
+        print('Line 129 ' + e)
         pass
 
     try:
@@ -134,7 +142,7 @@ def download(url, path, filename):
 
         return True, file_path
     except Exception as e:
-        print(e)
+        print('Line 145: ' + e)
         return False, file_path
 
 
@@ -212,7 +220,7 @@ class Ui_MainWindow(object):
         :param MainWindow: the main PyQt window
         """
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(371, 543)
+        MainWindow.resize(371, 500)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.treeWidget = QtWidgets.QTreeWidget(self.centralwidget)
@@ -229,16 +237,16 @@ class Ui_MainWindow(object):
         # Connect download button to function
         self.btnDownload.pressed.connect(self.init_download)
         self.dtStart = QtWidgets.QDateEdit(self.centralwidget)
-        self.dtStart.setGeometry(QtCore.QRect(110, 400, 71, 22))
+        self.dtStart.setGeometry(QtCore.QRect(40, 400, 71, 22))
         self.dtStart.setObjectName("dtStart")
         self.lbllFrom = QtWidgets.QLabel(self.centralwidget)
-        self.lbllFrom.setGeometry(QtCore.QRect(80, 400, 31, 16))
+        self.lbllFrom.setGeometry(QtCore.QRect(10, 400, 31, 16))
         self.lbllFrom.setObjectName("lbllFrom")
         self.lblTo = QtWidgets.QLabel(self.centralwidget)
-        self.lblTo.setGeometry(QtCore.QRect(190, 400, 21, 16))
+        self.lblTo.setGeometry(QtCore.QRect(120, 400, 21, 16))
         self.lblTo.setObjectName("lblTo")
         self.dtEnd = QtWidgets.QDateEdit(self.centralwidget)
-        self.dtEnd.setGeometry(QtCore.QRect(210, 400, 71, 22))
+        self.dtEnd.setGeometry(QtCore.QRect(140, 400, 71, 22))
         self.dtEnd.setObjectName("dtEnd")
         # Set end date to today
         self.dtEnd.setDate(QDate.currentDate())
@@ -258,10 +266,6 @@ class Ui_MainWindow(object):
         font.setWeight(75)
         self.lblTitle.setFont(font)
         self.lblTitle.setObjectName("lblTitle")
-        self.progressBar = QtWidgets.QProgressBar(self.centralwidget)
-        self.progressBar.setGeometry(QtCore.QRect(10, 470, 351, 23))
-        self.progressBar.setProperty("value", 0)
-        self.progressBar.setObjectName("progressBar")
         self.line = QtWidgets.QFrame(self.centralwidget)
         self.line.setGeometry(QtCore.QRect(0, 60, 371, 16))
         self.line.setFrameShape(QtWidgets.QFrame.HLine)
@@ -295,6 +299,10 @@ class Ui_MainWindow(object):
         self.txtPassword.setObjectName("txtPassword")
         # Set password
         self.txtPassword.setEchoMode(QtWidgets.QLineEdit.Password)
+        # Check box
+        self.chkBoxLatest = QtWidgets.QCheckBox(self.centralwidget)
+        self.chkBoxLatest.setGeometry(QtCore.QRect(240, 400, 101, 17))
+        self.chkBoxLatest.setObjectName("chkBoxLatest")
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 371, 25))
@@ -307,15 +315,8 @@ class Ui_MainWindow(object):
         self.retranslate_ui(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
-        # Tracker variables
-        self.completed = 0
-        self.downloading = set()
-        self.failed = []
         # Multithreading safety
-        self.total_count_update_lock = QMutex()
-        self.completed_update_lock = QMutex()
         self.threadpool_lock = QMutex()
-        self.downloading_lock = QMutex()
 
         # Timer
         self.timer = QTimer()
@@ -324,67 +325,60 @@ class Ui_MainWindow(object):
         self.time_elapsed_zero = 0
 
     def tick(self):
+        """
+        Called every time the timer ticks during a download
+        :return: None
+        """
         if threadpool.activeThreadCount() is 0:
             self.time_elapsed_zero = self.time_elapsed_zero + 1
         else:
             self.time_elapsed_zero = 0
 
         if self.time_elapsed_zero is 30:
-            self.progressBar.setValue(100)
             self.show_info_box('Finished downloading!')
+            self.btnDownload.setDisabled(False)
             self.timer.stop()
 
-    def total_count_increment(self):
-        self.total_count_update_lock.lock()
-        global downloadable
-        downloadable = downloadable + 1
-        self.total_count_update_lock.unlock()
-
-    def safe_downloading_add(self, path):
-        self.downloading_lock.lock()
-        self.downloading.add(path)
-        self.downloading_lock.unlock()
-
-    def safe_downloading_remove(self, path):
-        self.downloading_lock.lock()
-        self.downloading.remove(path)
-        self.downloading_lock.unlock()
-
     def download_scraped_links(self, result):
+        """
+        Called by Scraper threads. Will create Downloader threads to start
+        MODS XML downloading process
+        :param result: the result from the scraper thread emitted as a signal
+        :return: None
+        """
         path, mods = result
+        # Failed to scrape MODS
+        if mods is None or len(mods) is 0:
+            self.show_error_box('Failed to scrape (& download) ' + path)
+            return
+
         # Start downloading in multiple threads
         for (pid, url, date) in mods:
-            pid = pid.replace(':', '_')
-            file_path = path + os.sep + pid + os.sep + pid + '_' + date + '_MODS.xml'
-            if file_path not in self.downloading:
-                self.safe_downloading_add(file_path)
-                self.total_count_increment()
-                # Path format e.g.: arms_1234_092919_MODS.xml, 092919 = 09/29/2019
-                worker = DownloaderWorker(download,
-                                          url,
-                                          path,
-                                          os.sep + pid + '_' + date + '_MODS.xml')
+            # Path format e.g.: arms_1234_092919_MODS.xml, 092919 = 09/29/2019
+            worker = DownloaderWorker(download,
+                                      url,
+                                      path,
+                                      os.sep + pid.replace(':', '_') + '_' + date + '_MODS.xml')
 
-                worker.signals.download_complete.connect(self.completed_download)
+            worker.signals.download_complete.connect(self.download_complete)
 
-                self.threadpool_lock.lock()
-                threadpool.start(worker)
-                self.threadpool_lock.unlock()
+            self.threadpool_lock.lock()
+            threadpool.start(worker)
+            self.threadpool_lock.unlock()
 
-    def completed_download(self, completed):
-        success, path = completed
-        if path in self.downloading:
+    def download_complete(self, result):
+        success, path = result
 
-            self.safe_downloading_remove(path)
-            if success:
-                self.completed_update_lock.lock()
-                self.completed = self.completed + 1
-                self.progressBar.setValue((self.completed / downloadable) * 100)
-                self.completed_update_lock.unlock()
-            else:
-                self.failed.append(path)
+        if not success:
+            self.show_error_box('Failed to download ' + path)
 
     def create_dirs_and_download(self, root, path):
+        """
+        Creates directories for each collection object in which MODS XML will be stored.
+        :param root: the root of the collection being downloaded, also the children (recursively set)
+        :param path: the path at which the folder is for this collection
+        :return: None
+        """
         global downloadable
         # Make the path if it does not exist.
         if not os.path.exists(path):
@@ -409,6 +403,10 @@ class Ui_MainWindow(object):
             self.create_dirs_and_download(child, path + os.sep + child.text(0).replace(":", "_"))
 
     def init_download(self):
+        """
+        Performs checks before starting download and displays content to download
+        :return: None
+        """
         if len(self.treeWidget.selectedItems()) is 0:
             self.show_error_box('You must make a selection before downloading!')
         elif len(self.txtUsername.text().strip()) is 0:
@@ -420,8 +418,7 @@ class Ui_MainWindow(object):
         elif not sign_in(self.txtUsername.text(), self.txtPassword.text()):
             self.show_error_box('Ensure your username and password are correct!')
         else:
-            # Reset the completed count and progress bar
-            self.reset()
+            # Display message to user
             msg = ['You will download MODS XML files for the selected PIDs and all of its children:\n\n']
             for item in self.treeWidget.selectedItems():
                 msg.append('- ')
@@ -429,6 +426,8 @@ class Ui_MainWindow(object):
                 msg.append('\n')
 
             self.show_info_box(''.join(msg))
+            # Disable download button until download is complete
+            self.btnDownload.setDisabled(True)
             # Create all the directories to save files
             for item in self.treeWidget.selectedItems():
                 self.create_dirs_and_download(item, item.text(0).replace(":", "_"))
@@ -437,6 +436,12 @@ class Ui_MainWindow(object):
             self.timer.start(1000)
 
     def populate_tree_widget(self, current_widget_item, collection):
+        """
+        Recursively populates the tree widget with all the collections
+        :param current_widget_item: Initially the root, then each child (recursively set)
+        :param collection: the Arca collection object
+        :return: None
+        """
         if collection.non_collection_child is True:
             c = QtWidgets.QTreeWidgetItem(
                 current_widget_item, [collection.pid, str(len(collection.get_children())), collection.title])
@@ -459,21 +464,18 @@ class Ui_MainWindow(object):
         if os.path.exists('tree.dat'):
             parent = getDOHCollns.get_parent_from_file()
         else:
+            import time
+            self.start_time = time.time()
             Ui_MainWindow.show_info_box \
                 ("tree.dat file not found. Generating repositories from Arca website. This will take a few minutes...")
             parent = getDOHCollns.get_parent()
+            print(time.time() - self.start_time)
 
         # Populate the widget recursively
         self.populate_tree_widget(self.treeWidget, parent)
         # Set width of the PID column to resize to content
         self.treeWidget.resizeColumnToContents(0)
         self.treeWidget.resizeColumnToContents(2)
-
-    def reset(self):
-        self.completed = 0
-        self.downloading.clear()
-        self.failed.clear()
-        self.progressBar.setValue(0)
 
     @staticmethod
     def show_info_box(msg):
@@ -524,6 +526,7 @@ class Ui_MainWindow(object):
                                          "<html><head/><body><p><span style=\" color:#0000ff;\">Arca - MODS XML Downloader</span></p></body></html>"))
         self.lblUsername.setText(_translate("MainWindow", "Username:"))
         self.lblPassword.setText(_translate("MainWindow", "Password:"))
+        self.chkBoxLatest.setText(_translate("MainWindow", "Download latest"))
         # Load the tree into the UI
         self.load_tree()
 

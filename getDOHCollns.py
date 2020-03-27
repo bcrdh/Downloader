@@ -12,7 +12,7 @@ start_time = time.time()
 global_session = None
 
 # Base url of the website we scrape
-base_url = 'https://doh.arcabc.ca/'
+base_url = 'https://doh.arcabc.ca'
 
 """
 List of futures created by the executor. This list
@@ -112,6 +112,7 @@ def get_collns(url, parent_colln):
     """
     # Create a new browser instance and open the URL
     browser = RoboBrowser(session=global_session, parser='html.parser')
+    print('Scraping ' + url)
     browser.open(url)
 
     # Collection objects with pids ending in numbers
@@ -139,8 +140,8 @@ def get_collns(url, parent_colln):
 
             # If there is a next page, add it to the thread pool for scraping
             next_page = browser.find('a', title='Go to next page')
-            if next_page is not None:
-                #print('Submitting ' + next_page['href'] + ' with parent ' + parent_colln.pid)
+            if next_page:
+                # print('Submitting ' + next_page['href'] + ' with parent ' + parent_colln.pid)
                 futures.append(executor.submit(get_collns, base_url + next_page['href'], parent_colln))
 
     # Collection objects with pids ending in letters
@@ -157,7 +158,7 @@ def get_collns(url, parent_colln):
                 /islandora/object/a:b then a:b is the pid
                 This can be extracted from the URL by parsing
                 """
-                pid = src.split("/")[6].replace("%3A", ":")
+                pid = src.split("/")[-1].replace("%3A", ":")
                 # The title attribute of the link tag
                 tit = lnk['title']
                 # Avoid scraping a resource more than once
@@ -206,7 +207,7 @@ def get_parent_from_file():
     """
     # The parent that is found in the file
     to_return = None
-    with open('tree.dat', 'r') as f:
+    with codecs.open('tree.dat', 'r', 'utf-8') as f:
         # Read the title first
         title = f.readline()
         # Keep going while there is a title
@@ -276,8 +277,8 @@ def get_parent():
     The parent collection object that allows access to all
     other collection objects
     """
-    parent = Collection('Digitized Okanagan History', 'https://doh.arcabc.ca/islandora/object/doh%3Aroot',
-                        'doh:root', False, None)
+    parent = Collection('Digitized Okanagan History', 'https://doh.arcabc.ca/islandora/object/bcrdh%3Aroot',
+                        'bcrdh:root', False, None)
 
     # Initiate the scraping process
     get_collns(parent.href, parent)
