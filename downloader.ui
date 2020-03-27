@@ -45,7 +45,7 @@
    <widget class="QDateEdit" name="dtStart">
     <property name="geometry">
      <rect>
-      <x>110</x>
+      <x>40</x>
       <y>400</y>
       <width>71</width>
       <height>22</height>
@@ -55,7 +55,7 @@
    <widget class="QLabel" name="lbllFrom">
     <property name="geometry">
      <rect>
-      <x>80</x>
+      <x>10</x>
       <y>400</y>
       <width>31</width>
       <height>16</height>
@@ -68,7 +68,7 @@
    <widget class="QLabel" name="lblTo">
     <property name="geometry">
      <rect>
-      <x>190</x>
+      <x>120</x>
       <y>400</y>
       <width>21</width>
       <height>16</height>
@@ -81,7 +81,7 @@
    <widget class="QDateEdit" name="dtEnd">
     <property name="geometry">
      <rect>
-      <x>210</x>
+      <x>140</x>
       <y>400</y>
       <width>71</width>
       <height>22</height>
@@ -223,6 +223,19 @@
     </property>
     <property name="inputMask">
      <string/>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="chkBoxLatest">
+    <property name="geometry">
+     <rect>
+      <x>240</x>
+      <y>400</y>
+      <width>101</width>
+      <height>17</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Download latest</string>
     </property>
    </widget>
   </widget>
