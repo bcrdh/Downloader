@@ -1,11 +1,12 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QDate, QRunnable, QObject, pyqtSignal, pyqtSlot, QThreadPool, QMutex, QTimer
-from PyQt5.QtWidgets import QMessageBox, QAbstractItemView
+from PyQt5.QtWidgets import QMessageBox, QAbstractItemView, QWidget
 from robobrowser import RoboBrowser
 import getDOHCollns
 import os
 import re
 from datetime import datetime
+from enum import Enum
 
 """
 Thread pool for all the threads
@@ -71,16 +72,27 @@ def sign_in(username, password):
 
 
 """
+Download type enum
+"""
+
+
+class DownloadType(Enum):
+    LATEST = 1
+    RANGE = 2
+    FIRST_INGEST = 3
+
+
+"""
 Scraping / Downloading
 """
 
 
-def scrape(pid, url, start_date, end_date):
+def scrape(pid, url, download_type, dates):
     """
     Scrapes the MODS XML urls for collection objects
     :param url: the url to scrape from
-    :param start_date: the starting date constraint for MODS XML files
-    :param end_date: the ending date constraint for MODS XML files
+    :param download_type: the type of download (from enum)
+    :param dates: the dates required for this download type
     :return: the list of all the MODS XML urls
     """
     result = []
@@ -97,17 +109,25 @@ def scrape(pid, url, start_date, end_date):
         # Filter based on date
         for file_link in file_links:
             date = datetime.strptime(file_link.text, '%A, %d-%b-%y %H:%M:%S Z')
-            # if its latest file, append all results OR If the file is in range append appropriate result
-            if not start_date or start_date <= date.date() <= end_date:
-                result.append(
-                    (pid, 'https://doh.arcabc.ca' + file_link['href'], date)
-                )
+            result.append(
+                (pid, 'https://doh.arcabc.ca' + file_link['href'], date)
+            )
     except Exception as e:
-        print('Line 109: ' + e)
-        return []
-    # If its a date range, return the entire array
-    # otherwise the last sorted element for latest
-    return result if start_date else [sorted(result, key=lambda tup: tup[2])[-1]]
+        print('Error in scraping: %s' % str(e))
+        return None
+
+    if download_type is DownloadType.RANGE:
+        # Date lies within range
+        return list(filter(lambda x: dates[0] <= x[2].date() <= dates[1], result))
+    elif download_type is DownloadType.LATEST:
+        # The sorted date (index -1 gives the last element, aka the biggest date)
+        return [sorted(result, key=lambda tup: tup[2])[-1]]
+    else:  # DownloadType.FIRST_INGEST
+        # Get the tuple of the first ingest
+        first_ingest = sorted(result, key=lambda tup: tup[2])[0]
+        # Check if the year ingested is the same as the one inputted by the user
+        if first_ingest[2].date().year == dates[0].year:
+            return [first_ingest]
 
 
 def download(url, path, filename):
@@ -193,12 +213,12 @@ class ScraperWorker(QRunnable):
 
     @pyqtSlot()
     def run(self):
-        pid, path, start_date, end_date = self.args
+        pid, path, download_type, dates = self.args
         result = self.fn(pid,
                          'https://doh.arcabc.ca/islandora/object/' + pid.replace(":", "%3A") +
                          '/datastream/MODS/version',
-                         start_date,
-                         end_date)
+                         download_type,
+                         dates)
         # Sends scraped results to UI so it can
         # start the downloader
         self.signals.scrape_complete.emit((path, result))
@@ -219,7 +239,7 @@ class Ui_MainWindow(object):
         """
 
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(371, 500)
+        MainWindow.resize(371, 590)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.treeWidget = QtWidgets.QTreeWidget(self.centralwidget)
@@ -231,21 +251,21 @@ class Ui_MainWindow(object):
         # Allow selection of multiple objects
         self.treeWidget.setSelectionMode(QAbstractItemView.MultiSelection)
         self.btnDownload = QtWidgets.QPushButton(self.centralwidget)
-        self.btnDownload.setGeometry(QtCore.QRect(10, 430, 351, 31))
+        self.btnDownload.setGeometry(QtCore.QRect(10, 520, 351, 31))
         self.btnDownload.setObjectName("btnDownload")
         # Connect download button to function
         self.btnDownload.pressed.connect(self.init_download)
         self.dtStart = QtWidgets.QDateEdit(self.centralwidget)
-        self.dtStart.setGeometry(QtCore.QRect(40, 400, 71, 22))
+        self.dtStart.setGeometry(QtCore.QRect(40, 440, 71, 22))
         self.dtStart.setObjectName("dtStart")
         self.lbllFrom = QtWidgets.QLabel(self.centralwidget)
-        self.lbllFrom.setGeometry(QtCore.QRect(10, 400, 31, 16))
+        self.lbllFrom.setGeometry(QtCore.QRect(10, 440, 31, 16))
         self.lbllFrom.setObjectName("lbllFrom")
         self.lblTo = QtWidgets.QLabel(self.centralwidget)
-        self.lblTo.setGeometry(QtCore.QRect(120, 400, 21, 16))
+        self.lblTo.setGeometry(QtCore.QRect(120, 440, 21, 16))
         self.lblTo.setObjectName("lblTo")
         self.dtEnd = QtWidgets.QDateEdit(self.centralwidget)
-        self.dtEnd.setGeometry(QtCore.QRect(140, 400, 71, 22))
+        self.dtEnd.setGeometry(QtCore.QRect(140, 440, 71, 22))
         self.dtEnd.setObjectName("dtEnd")
         # Set end date to today
         self.dtEnd.setDate(QDate.currentDate())
@@ -299,10 +319,28 @@ class Ui_MainWindow(object):
         # Set password
         self.txtPassword.setEchoMode(QtWidgets.QLineEdit.Password)
         # Check box
-        self.chkBoxLatest = QtWidgets.QCheckBox(self.centralwidget)
-        self.chkBoxLatest.setGeometry(QtCore.QRect(240, 400, 101, 17))
-        self.chkBoxLatest.setObjectName("chkBoxLatest")
-        self.chkBoxLatest.clicked.connect(self.toggle_date_elements)
+        self.radioLatest = QtWidgets.QRadioButton(self.centralwidget)
+        self.radioLatest.setGeometry(QtCore.QRect(240, 400, 101, 17))
+        self.radioLatest.setObjectName("chkBoxLatest")
+        self.radioLatest.clicked.connect(self.on_radio_latest_checked)
+        # Radio range
+        self.radioRange = QtWidgets.QRadioButton(self.centralwidget)
+        self.radioRange.setGeometry(QtCore.QRect(240, 440, 121, 17))
+        self.radioRange.setObjectName("radioRange")
+        self.radioRange.clicked.connect(self.on_radio_range_checked)
+        # Radio first ingest
+        self.radioFirstIngest = QtWidgets.QRadioButton(self.centralwidget)
+        self.radioFirstIngest.setGeometry(QtCore.QRect(240, 480, 121, 17))
+        self.radioFirstIngest.setObjectName("radioFirstIngest")
+        self.radioFirstIngest.clicked.connect(self.on_radio_ingest_checked)
+        # dtIngest
+        self.dtIngest = QtWidgets.QDateEdit(self.centralwidget)
+        self.dtIngest.setGeometry(QtCore.QRect(80, 480, 71, 22))
+        self.dtIngest.setObjectName("dtIngest")
+        # lblIngestedon
+        self.lblIngestedOn = QtWidgets.QLabel(self.centralwidget)
+        self.lblIngestedOn.setGeometry(QtCore.QRect(10, 480, 71, 16))
+        self.lblIngestedOn.setObjectName("lblIngestedOn")
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 371, 25))
@@ -348,7 +386,7 @@ class Ui_MainWindow(object):
         """
         path, mods = result
         # Failed to scrape MODS
-        if mods is None or len(mods) is 0:
+        if mods is None:
             self.show_error_box('Failed to scrape (& download) ' + path)
             return
 
@@ -391,12 +429,14 @@ class Ui_MainWindow(object):
 
         # Scrape this URL and download valid MODS XML files
         if root.childCount() is 0:
-            downloadable = downloadable+1
+            downloadable = downloadable + 1
+            download_type, dates = self.get_download_type()
+
             worker = ScraperWorker(scrape,
                                    root.text(0),
                                    path,
-                                   self.dtStart.date().toPyDate() if not self.chkBoxLatest.isChecked() else None,
-                                   self.dtEnd.date().toPyDate() if not self.chkBoxLatest.isChecked() else None)
+                                   download_type,
+                                   dates)
 
             worker.signals.scrape_complete.connect(self.download_scraped_links)
 
@@ -406,6 +446,18 @@ class Ui_MainWindow(object):
         for x in range(root.childCount()):
             child = root.child(x)
             self.create_dirs_and_download(child, path + os.sep + child.text(0).replace(":", "_"))
+
+    def get_download_type(self):
+        """
+        Identifies the download type based on the checked radio buttton
+        :return: the appropriate download type enum value and the dates required
+        """
+        if self.radioLatest.isChecked():
+            return DownloadType.LATEST, None
+        elif self.radioFirstIngest.isChecked():
+            return DownloadType.FIRST_INGEST, [self.dtIngest.date().toPyDate()]
+        else:
+            return DownloadType.RANGE, [self.dtStart.date().toPyDate(), self.dtEnd.date().toPyDate()]
 
     def init_download(self):
         """
@@ -418,7 +470,7 @@ class Ui_MainWindow(object):
             self.show_error_box("You must enter a username!")
         elif len(self.txtPassword.text().strip()) is 0:
             self.show_error_box("You must enter a password!")
-        elif not self.chkBoxLatest.isChecked() and not (self.dtStart.date() <= self.dtEnd.date()):
+        elif not self.radioLatest.isChecked() and not (self.dtStart.date() <= self.dtEnd.date()):
             self.show_error_box('The start date must be smaller than or equal to the end date!')
         elif not sign_in(self.txtUsername.text(), self.txtPassword.text()):
             self.show_error_box('Ensure your username and password are correct!')
@@ -516,13 +568,25 @@ class Ui_MainWindow(object):
         msg_box.setStandardButtons(QMessageBox.Ok)
         msg_box.exec_()
 
-    def toggle_date_elements(self):
-        if self.chkBoxLatest.isChecked():
-            self.dtStart.setEnabled(False)
-            self.dtEnd.setEnabled(False)
-        else:
-            self.dtStart.setEnabled(True)
-            self.dtEnd.setEnabled(True)
+    def on_radio_latest_checked(self):
+        # Disable
+        self.dtStart.setEnabled(not self.radioLatest.isChecked())
+        self.dtEnd.setEnabled(not self.radioLatest.isChecked())
+        self.dtIngest.setEnabled(not self.radioLatest.isChecked())
+
+    def on_radio_range_checked(self):
+        # Re-enable
+        self.dtStart.setEnabled(self.radioRange.isChecked())
+        self.dtEnd.setEnabled(self.radioRange.isChecked())
+        # Disable
+        self.dtIngest.setEnabled(not self.radioRange.isChecked())
+
+    def on_radio_ingest_checked(self):
+        # Re-enable
+        self.dtIngest.setEnabled(self.radioFirstIngest.isChecked())
+        # Disable
+        self.dtStart.setEnabled(not self.radioFirstIngest.isChecked())
+        self.dtEnd.setEnabled(not self.radioFirstIngest.isChecked())
 
     def retranslate_ui(self, MainWindow):
         """
@@ -531,7 +595,7 @@ class Ui_MainWindow(object):
         :return: None
         """
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "Arca - MODS XML Downloader V1.1.0"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "Arca - MODS XML Downloader V1.0"))
         self.btnDownload.setText(_translate("MainWindow", "Download selected"))
         self.lbllFrom.setText(_translate("MainWindow", "From:"))
         self.lblTo.setText(_translate("MainWindow", "To:"))
@@ -539,7 +603,10 @@ class Ui_MainWindow(object):
                                          "<html><head/><body><p><span style=\" color:#0000ff;\">Arca - MODS XML Downloader</span></p></body></html>"))
         self.lblUsername.setText(_translate("MainWindow", "Username:"))
         self.lblPassword.setText(_translate("MainWindow", "Password:"))
-        self.chkBoxLatest.setText(_translate("MainWindow", "Download latest"))
+        self.radioLatest.setText(_translate("MainWindow", "Download latest"))
+        self.radioRange.setText(_translate("MainWindow", "Download in range"))
+        self.radioFirstIngest.setText(_translate("MainWindow", "Download first ingest"))
+        self.lblIngestedOn.setText(_translate("MainWindow", "Ingested on:"))
         # Load the tree into the UI
         self.load_tree()
 
