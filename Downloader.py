@@ -474,6 +474,9 @@ class Ui_MainWindow(object):
             self.show_error_box('The start date must be smaller than or equal to the end date!')
         elif not sign_in(self.txtUsername.text(), self.txtPassword.text()):
             self.show_error_box('Ensure your username and password are correct!')
+        elif not self.radioLatest.isChecked() and not self.radioFirstIngest.isChecked() and not self.radioRange.isChecked():
+            self.show_error_box('Please select a download type before proceeding!')
+
         else:
             # Display message to user
             msg = ['You will download MODS XML files for the selected PIDs and all of its children:\n\n']
